@@ -1,11 +1,10 @@
 #!/usr/bin/env node
-// TWS WINGO 1M BOT – RENDER 24/7 SAFE VERSION
+// TWS WINGO 1M BOT – FINAL RENDER VERSION (NODE 22 SAFE)
 
 import os from "os";
-import fetch from "node-fetch";
 
 /* ================= TELEGRAM CONFIG ================= */
-const TELEGRAM_BOT_TOKEN = process.env.BOT_TOKEN; // Render Env Variable
+const TELEGRAM_BOT_TOKEN = process.env.BOT_TOKEN; // Render env variable
 const TELEGRAM_CHAT_ID = "@TWS_Teams";
 
 const WIN_STICKER =
@@ -64,6 +63,8 @@ const IP_ADDR = getIP();
 
 /* ================= TELEGRAM ================= */
 async function sendToTelegram(message, isSticker = false) {
+  if (!TELEGRAM_BOT_TOKEN) return;
+
   try {
     const method = isSticker ? "sendSticker" : "sendMessage";
     const payload = isSticker
@@ -123,7 +124,6 @@ function getPatternPrediction() {
   return patterns[Math.floor(Math.random() * patterns.length)];
 }
 
-/* ✅ FIXED TRY–CATCH (NO SYNTAX ERROR) */
 async function fetchGameResult() {
   try {
     const res = await fetch(`${API_URL}?t=${Date.now()}`);
@@ -151,7 +151,6 @@ async function updatePanel() {
         String(cur.number || cur.result).slice(-1)
       );
       const actualRes = actualNum >= 5 ? "BIGG" : "SMALL";
-      predictionHistory[0].actual = actualRes;
 
       await sendToTelegram(
         predictionHistory[0].predicted === actualRes
@@ -183,23 +182,15 @@ async function updatePanel() {
 
     predictionHistory.unshift({
       period: nextPeriod,
-      predicted: p,
-      actual: null
+      predicted: p
     });
 
     lastPredictedPeriod = nextPeriod;
   }
 
   predictionHistory.slice(0, 10).forEach((x, i) => {
-    const status =
-      x.actual === null
-        ? `${C.yellow}WAIT`
-        : x.actual === x.predicted
-        ? `${C.green}WIN`
-        : `${C.red}LOSS`;
-
     console.log(
-      `${i + 1}. ${x.period.slice(-4)} → ${x.predicted} → ${status}${C.reset}`
+      `${i + 1}. ${x.period.slice(-4)} → ${x.predicted}${C.reset}`
     );
   });
 
