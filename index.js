@@ -34,6 +34,78 @@ async function sendToTelegram(message, isSticker = false) {
         };
 
         const req = https.request(options);
+        req.on('error', (e) => console.log("TG API error"));
+        req.write(payload);
+        req.end();
+    } catch (err) {
+        console.log("TG send failed");
+    }
+}
+
+function getPatternPrediction() {
+    const patterns = ["BIGG", "SMALL"];
+    return patterns[Math.floor(Math.random() * patterns.length)];
+}
+
+async function updatePanel() {
+    https.get(`${API_URL}?ts=${Date.now()}`, (res) => {
+        let body = "";
+        res.on("data", (chunk) => { body += chunk; });
+        res.on("end", async () => {
+            try {
+                const j = JSON.parse(body);
+                const data = j?.data?.list || [];
+                if (!data.length) return;
+
+                const cur = data[0];
+                const currentPeriod = cur.issue || cur.issueNumber;
+                const nextPeriod = (BigInt(currentPeriod) + 1n).toString();
+
+                if (lastPredictedPeriod !== nextPeriod) {
+                    // ১. আগের রেজাল্ট স্টিকার পাঠানো
+                    if (predictionHistory.length > 0) {
+                        const actualNum = parseInt(String(cur.number || cur.result).slice(-1));
+                        const actualRes = actualNum >= 5 ? "BIGG" : "SMALL";
+                        await sendToTelegram(predictionHistory[0].predicted === actualRes ? WIN_STICKER : LOSS_STICKER, true);
+                    }
+
+                    // ২. ১০ সেকেন্ড ওয়েট করা
+                    await delay(10000); 
+
+                    // ৩. নতুন সিগন্যাল পাঠানো
+                    const p = getPatternPrediction();
+                    const timeNow = new Date().toLocaleTimeString("en-US", { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Dhaka' });
+                    const msg = `🎰 <b>WINGO 1M MARKET</b>\n` +
+                                `📊 <b>PERIOD:</b> ${nextPeriod}\n` +
+                                `⏰ <b>Time:</b> ${timeNow}\n` +
+                                `🎯 <b>BUY:</b> ${p === "BIGG" ? "🔴 BIGG" : "🟢 SMALL"}\n\n` +
+                                `⚡️<b>THIS SIGNAL PROVIDED BY TWS TEAM</b>⚡️\n\n` +
+                                `📞 @OWNER_TWS`;
+                    
+                    await sendToTelegram(msg);
+                    predictionHistory.unshift({ period: nextPeriod, predicted: p });
+                    if (predictionHistory.length > 5) predictionHistory.pop();
+                    lastPredictedPeriod = nextPeriod;
+                    console.log("Success: Prediction sent for " + nextPeriod);
+                }
+            } catch (e) {
+                console.log("Data parsing error");
+            }
+        });
+    }).on("error", (e) => {
+        console.log("API Fetch error");
+    });
+}
+
+// Render-এর জন্য সার্ভার
+http.createServer((req, res) => {
+    res.writeHead(200);
+    res.end("Bot Active");
+}).listen(process.env.PORT || 3000);
+
+// ১৫ সেকেন্ড পর পর চেক করবে
+setInterval(updatePanel, 15000);
+console.log("Bot started...");
         req.on('error', (e) => console.log("Telegram API error"));
         req.write(payload);
         req.end();
