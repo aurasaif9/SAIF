@@ -1,43 +1,17 @@
 #!/usr/bin/env node
-// TWS WINGO 1M BOT – FINAL RENDER VERSION (NODE 22 SAFE)
+// TWS WINGO 1M BOT – FINAL FINAL FIX (NODE 22 BUILT-IN FETCH)
 
 import os from "os";
-import fetch from "node-fetch";
 
 /* ================= TELEGRAM CONFIG ================= */
-const TELEGRAM_BOT_TOKEN = process.env.BOT_TOKEN; // REQUIRED
-const TELEGRAM_CHAT_ID = process.env.CHAT_ID;     // REQUIRED (numeric)
+const TELEGRAM_BOT_TOKEN = process.env.BOT_TOKEN;
+const TELEGRAM_CHAT_ID = process.env.CHAT_ID;
 
 /* ================= STICKERS ================= */
 const WIN_STICKER =
   "CAACAgUAAxkBAAMJaVaqlqfj3ezjjCGTEsZrhwbxTyAAAqQaAAI4ZQlVFQAB7e-5iBcyOAQ";
 const LOSS_STICKER =
   "CAACAgUAAxkBAAMKaVaqlwtXJIhkqunkRi-DkH0LP_cAAuAeAAJ1FQhVCo9WKmwYFIw4BA";
-
-/* ================= USER INFO ================= */
-const USER_NAME = "SAIF";
-const USER_COUNTRY = "BD";
-
-/* ================= COLORS ================= */
-const C = {
-  reset: "\x1b[0m",
-  white: "\x1b[1;37m",
-  green: "\x1b[1;32m",
-  red: "\x1b[1;31m",
-  cyan: "\x1b[1;36m",
-  yellow: "\x1b[1;33m",
-  magenta: "\x1b[1;35m",
-  bold: "\x1b[1m"
-};
-
-const RANDOM_COLORS = [
-  "\x1b[1;36m",
-  "\x1b[1;31m",
-  "\x1b[1;32m",
-  "\x1b[1;33m",
-  "\x1b[1;35m"
-];
-const clr = RANDOM_COLORS[Math.floor(Math.random() * RANDOM_COLORS.length)];
 
 /* ================= CONFIG ================= */
 const API_URL =
@@ -61,154 +35,88 @@ function getIP() {
   }
   return "127.0.0.1";
 }
-const IP_ADDR = getIP();
 
 /* ================= TELEGRAM ================= */
-async function sendToTelegram(message, isSticker = false) {
+async function sendToTelegram(message, sticker = false) {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
 
-  try {
-    const method = isSticker ? "sendSticker" : "sendMessage";
-    const payload = isSticker
-      ? { chat_id: TELEGRAM_CHAT_ID, sticker: message }
-      : {
-          chat_id: TELEGRAM_CHAT_ID,
-          text: message,
-          parse_mode: "HTML"
-        };
+  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${
+    sticker ? "sendSticker" : "sendMessage"
+  }`;
 
-    await fetch(
-      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${method}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      }
-    );
-  } catch (err) {
-    console.log("Telegram error:", err.message);
+  const body = sticker
+    ? { chat_id: TELEGRAM_CHAT_ID, sticker: message }
+    : {
+        chat_id: TELEGRAM_CHAT_ID,
+        text: message,
+        parse_mode: "HTML"
+      };
+
+  try {
+    await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+  } catch (e) {
+    console.log("Telegram error:", e.message);
   }
 }
 
-/* ================= UI ================= */
-function drawHeader() {
-  console.clear();
-  const time = new Date().toLocaleTimeString("en-US");
-
-  console.log(`${clr}
-███████╗ █████╗ ██╗███████╗
-██╔════╝██╔══██╗██║██╔════╝
-███████╗███████║██║█████╗  
-╚════██║██╔══██║██║██╔══╝  
-███████║██║  ██║██║██║     
-╚══════╝╚═╝  ╚═╝╚═╝╚═╝   1M${C.reset}`);
-
-  console.log(`${C.white}-------------------------------------------
-${C.green}IP      : ${clr}${IP_ADDR}
-${C.green}TIME    : ${clr}${time}
-${C.green}NAME    : ${C.white}${USER_NAME}
-${C.green}COUNTRY : ${C.white}${USER_COUNTRY}
-${C.white}-------------------------------------------${C.reset}`);
-}
-
 /* ================= LOGIC ================= */
-function getPatternPrediction() {
-  const patterns = ["BIGG", "SMALL", "BIGG", "SMALL", "BIGG"];
-  return patterns[Math.floor(Math.random() * patterns.length)];
+function getPrediction() {
+  return Math.random() > 0.5 ? "BIGG" : "SMALL";
 }
 
 async function fetchGameResult() {
   try {
     const res = await fetch(`${API_URL}?t=${Date.now()}`, {
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "application/json"
-      }
+      headers: { Accept: "application/json" }
     });
 
     const text = await res.text();
+    if (text.startsWith("<")) return [];
 
-    if (text.startsWith("<")) {
-      throw new Error("API returned HTML (blocked)");
-    }
-
-    const j = JSON.parse(text);
-    return j?.data?.list || [];
-  } catch (err) {
-    console.log("❌ Fetch error:", err.message);
+    const json = JSON.parse(text);
+    return json?.data?.list || [];
+  } catch {
     return [];
   }
 }
 
-async function updatePanel() {
+async function update() {
   const data = await fetchGameResult();
   if (!data.length) return;
 
   const cur = data[0];
-  const currentPeriod = cur.issue || cur.issueNumber;
-  const nextPeriod = (BigInt(currentPeriod) + 1n).toString();
-
-  drawHeader();
+  const nextPeriod = (BigInt(cur.issue) + 1n).toString();
 
   if (lastPredictedPeriod !== nextPeriod) {
-    if (predictionHistory.length > 0) {
-      const actualNum = parseInt(String(cur.number || cur.result).slice(-1));
-      const actualRes = actualNum >= 5 ? "BIGG" : "SMALL";
+    if (predictionHistory.length) {
+      const last = predictionHistory[0];
+      const actual =
+        parseInt(String(cur.number).slice(-1)) >= 5 ? "BIGG" : "SMALL";
 
       await sendToTelegram(
-        predictionHistory[0].predicted === actualRes
-          ? WIN_STICKER
-          : LOSS_STICKER,
+        last.predicted === actual ? WIN_STICKER : LOSS_STICKER,
         true
       );
     }
 
-    console.log(`${C.magenta}⏳ WAITING 10s...${C.reset}`);
-    await delay(10000);
-
-    const p = getPatternPrediction();
-    const timeNow = new Date().toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true
-    });
-
-    const msg =
-      `🎰 <b>WINGO 1M MARKET</b>\n` +
-      `📊 <b>PERIOD:</b> ${nextPeriod}\n` +
-      `⏰ <b>TIME:</b> ${timeNow}\n` +
-      `🎯 <b>BUY:</b> ${p === "BIGG" ? "🔴 BIGG" : "🟢 SMALL"}\n\n` +
-      `⚡️<b>THIS SIGNAL PROVIDED BY TWS TEAM</b>⚡️\n\n` +
-      `📞 @OWNER_TWS`;
-
-    await sendToTelegram(msg);
+    const p = getPrediction();
+    await sendToTelegram(
+      `🎰 <b>WINGO 1M</b>\n📊 PERIOD: ${nextPeriod}\n🎯 BUY: ${
+        p === "BIGG" ? "🔴 BIGG" : "🟢 SMALL"
+      }`
+    );
 
     predictionHistory.unshift({ period: nextPeriod, predicted: p });
     lastPredictedPeriod = nextPeriod;
   }
 
-  predictionHistory.slice(0, 10).forEach((x, i) => {
-    console.log(`${i + 1}. ${x.period.slice(-4)} → ${x.predicted}`);
-  });
-
   nextUpdateTime = Date.now() + REFRESH_TIME;
 }
 
-function countdown() {
-  const diff = Math.max(0, nextUpdateTime - Date.now());
-  process.stdout.write(
-    `\r${C.yellow}${C.bold}⏳ NEXT UPDATE ${Math.floor(diff / 1000)}s${C.reset}`
-  );
-}
-
 /* ================= START ================= */
-(async function start() {
-  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
-    console.log("❌ BOT_TOKEN or CHAT_ID missing");
-  }
-
-  console.log(`${C.green}🚀 BOT STARTED${C.reset}`);
-  await updatePanel();
-  setInterval(updatePanel, REFRESH_TIME);
-  setInterval(countdown, 1000);
-})();
+console.log("🚀 BOT STARTED");
+setInterval(update, REFRESH_TIME);
