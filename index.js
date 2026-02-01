@@ -1,23 +1,20 @@
 import fetch from "node-fetch";
-import os from "os";
 import http from "http";
 
-// ================= CONFIG (Fixed) =================
-const USER_NAME = "SAIF";      // এখানে তোর নাম ফিক্সড
-const USER_COUNTRY = "BD";     // এখানে তোর দেশ ফিক্সড
+// ================= CONFIG =================
+const USER_NAME = "SAIF";      
+const USER_COUNTRY = "BD";     
 const TELEGRAM_BOT_TOKEN = "8281243098:AAFf4wdCowXR6ent0peu7ngL_GYW7dXPqY8"; 
 const TELEGRAM_CHAT_ID = "@TWS_Teams"; 
 
 const WIN_STICKER = "CAACAgUAAxkBAAMJaVaqlqfj3ezjjCGTEsZrhwbxTyAAAqQaAAI4ZQlVFQAB7e-5iBcyOAQ";
 const LOSS_STICKER = "CAACAgUAAxkBAAMKaVaqlwtXJIhkqunkRi-DkH0LP_cAAuAeAAJ1FQhVCo9WKmwYFIw4BA";
 const API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json";
-const REFRESH_TIME = 15000; 
 
-// ================= GLOBAL =================
-let predictionHistory = [];
 let lastPredictedPeriod = null;
+let predictionHistory = [];
 
-// ================= TELEGRAM FUNCTION =================
+// ================= TELEGRAM SEND =================
 async function sendToTelegram(message, isSticker = false) {
   try {
     const type = isSticker ? "sendSticker" : "sendMessage";
@@ -32,18 +29,13 @@ async function sendToTelegram(message, isSticker = false) {
         parse_mode: isSticker ? null : "HTML"
       })
     });
-  } catch (e) { console.log("TG Error: " + e.message); }
+  } catch (e) { console.log("TG Error"); }
 }
 
-// ================= LOGIC =================
-function getPatternPrediction() {
-  const patterns = ["BIGG", "SMALL"];
-  return patterns[Math.floor(Math.random() * patterns.length)];
-}
-
+// ================= MAIN LOGIC =================
 async function updatePanel() {
   try {
-    const res = await fetch(`${API_URL}?ts=${Date.now()}`);
+    const res = await fetch(`${API_URL}?ts=${Date.now()}`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
     const j = await res.json();
     const data = j?.data?.list || [];
     if (!data.length) return;
@@ -53,50 +45,35 @@ async function updatePanel() {
     const nextPeriod = (BigInt(currentPeriod) + 1n).toString();
 
     if (lastPredictedPeriod !== nextPeriod) {
-      console.log(`🎯 Detected New Period: ${nextPeriod}`);
+      console.log(`🎯 New Period: ${nextPeriod}`);
       
-      // ১. আগের রেজাল্ট অনুযায়ী স্টিকার পাঠানো
+      // রেজাল্ট অনুযায়ী স্টিকার
       if (predictionHistory.length > 0) {
         const actualNum = parseInt(String(cur.number || cur.result).slice(-1));
         const actualRes = actualNum >= 5 ? "BIGG" : "SMALL";
-        if (predictionHistory[0].predicted === actualRes) {
-          await sendToTelegram(WIN_STICKER, true);
-        } else {
-          await sendToTelegram(LOSS_STICKER, true);
-        }
+        await sendToTelegram(predictionHistory[0].predicted === actualRes ? WIN_STICKER : LOSS_STICKER, true);
       }
 
-      // ২. ১০ সেকেন্ড ওয়েট
-      await new Promise(res => setTimeout(res, 10000)); 
+      await new Promise(r => setTimeout(r, 8000)); // ৮ সেকেন্ড গ্যাপ
 
-      // ৩. প্রেডিকশন পাঠানো
-      const p = getPatternPrediction();
-      const timeNow = new Date().toLocaleTimeString("en-US", { 
-          timeZone: "Asia/Dhaka", hour: '2-digit', minute: '2-digit', hour12: true 
-      });
+      const p = Math.random() > 0.5 ? "BIGG" : "SMALL";
+      const timeNow = new Date().toLocaleTimeString("en-US", { timeZone: "Asia/Dhaka", hour: '2-digit', minute: '2-digit', hour12: true });
       
-      const msg = `🎰 <b>WINGO 1M MARKET</b>\n` +
-                  `📊 <b>PERIOD:</b> ${nextPeriod}\n` +
-                  `⏰ <b>Time:</b> ${timeNow}\n` +
-                  `🎯 <b>BUY:</b> ${p === "BIGG" ? "🔴 BIGG" : "🟢 SMALL"}\n\n` +
-                  `⚡️<b>THIS SIGNAL PROVIDED BY TWS TEAM</b>⚡️\n\n` +
-                  `📞 @OWNER_TWS`;
+      const msg = `🎰 <b>WINGO 1M</b>\n📊 <b>PERIOD:</b> <code>${nextPeriod}</code>\n⏰ <b>Time:</b> ${timeNow}\n🎯 <b>BUY:</b> ${p === "BIGG" ? "🔴 BIGG" : "🟢 SMALL"}\n\n⚡️<b>PROVIDED BY TWS TEAM</b>⚡️`;
       
       await sendToTelegram(msg);
-      console.log(`✅ Prediction Sent: ${p}`);
-
-      predictionHistory.unshift({ period: nextPeriod, predicted: p });
+      predictionHistory.unshift({ predicted: p });
       lastPredictedPeriod = nextPeriod;
     }
   } catch (err) { console.log("Syncing..."); }
 }
 
-// ================= RENDER SERVER (MUST) =================
+// ================= RENDER HEALTH CHECK (Fixes "In Progress") =================
 http.createServer((req, res) => {
+    // এটি রেন্ডারের HEAD এবং GET রিকোয়েস্ট সফল করবে
     res.writeHead(200);
-    res.end('SAIF BOT ACTIVE');
+    res.end('ALIVE');
 }).listen(process.env.PORT || 10000);
 
-// ================= START =================
-console.log(`🚀 Bot Started for ${USER_NAME} (${USER_COUNTRY})`);
-setInterval(updatePanel, REFRESH_TIME);
+console.log(`🚀 Bot Active for ${USER_NAME}`);
+setInterval(updatePanel, 15000);
