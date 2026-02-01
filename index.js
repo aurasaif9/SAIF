@@ -23,10 +23,10 @@ async function sendTG(type, body) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chat_id: CHAT_ID, ...body })
     });
-  } catch (e) { console.log("Telegram error"); }
+  } catch (e) { console.log("Telegram connection issue"); }
 }
 
-// ================= LOGIC =================
+// ================= MAIN LOGIC =================
 async function runBot() {
   if (isProcessing) return;
   isProcessing = true;
@@ -34,6 +34,69 @@ async function runBot() {
   try {
     const response = await fetch(`${API_URL}?ts=${Date.now()}`, {
       headers: { "user-agent": "Mozilla/5.0" }
+    });
+    
+    const text = await response.text();
+    let json;
+    try {
+      json = JSON.parse(text);
+    } catch (e) {
+      console.log("Waiting for valid API data...");
+      isProcessing = false;
+      return;
+    }
+
+    const list = json?.data?.list || [];
+    if (list.length === 0) {
+      isProcessing = false;
+      return;
+    }
+
+    const current = list[0];
+    const currentPeriod = current.issue || current.issueNumber;
+    const nextPeriod = (BigInt(currentPeriod) + 1n).toString();
+
+    if (lastPeriod !== nextPeriod) {
+      // আগের প্রেডিকশন চেক
+      if (history.length > 0 && history[0].actual === null) {
+        const num = parseInt(String(current.number || current.result).slice(-1));
+        const actualType = num >= 5 ? "BIGG" : "SMALL";
+        const isWin = history[0].predicted === actualType;
+        await sendTG("sendSticker", { sticker: isWin ? WIN_STK : LOSS_STK });
+      }
+
+      await sleep(10000); // ১০ সেকেন্ড অপেক্ষা
+
+      const prediction = Math.random() > 0.5 ? "BIGG" : "SMALL";
+      const time = new Date().toLocaleTimeString("en-US", { hour12: true, timeZone: 'Asia/Dhaka' });
+
+      const message = `🎰 <b>WINGO 1M MARKET</b>\n` +
+                      `📊 <b>PERIOD:</b> <code>${nextPeriod}</code>\n` +
+                      `⏰ <b>Time:</b> ${time}\n` +
+                      `🎯 <b>BUY:</b> ${prediction === "BIGG" ? "🔴 BIGG" : "🟢 SMALL"}\n\n` +
+                      `⚡️<b>THIS SIGNAL PROVIDED BY TWS TEAM</b>⚡️`;
+
+      await sendTG("sendMessage", { text: message, parse_mode: "HTML" });
+      
+      history.unshift({ period: nextPeriod, predicted: prediction, actual: null });
+      lastPeriod = nextPeriod;
+      if (history.length > 5) history.pop();
+    }
+  } catch (err) {
+    console.log("Processing update...");
+  } finally {
+    isProcessing = false;
+  }
+}
+
+// ================= START SERVER (RENDER FIX) =================
+http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end('SAIF 1M BOT IS ACTIVE');
+}).listen(process.env.PORT || 3000);
+
+console.log("🚀 Bot is starting... Tracking WinGo 1M!");
+setInterval(runBot, 20000);
     });
     
     const text = await response.text();
