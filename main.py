@@ -8,52 +8,52 @@ from datetime import datetime
 import pytz
 
 # ================= CONFIG =================
-# রেন্ডার এনভায়রনমেন্ট থেকে টোকেন নেবে, না পেলে ডিফল্টটা ব্যবহার করবে
-BOT_TOKEN = os.environ.get('BOT_TOKEN', '8281243098:AAFf4wdCowXR6ent0peu7ngL_GYW7dXPqY8')
-CHAT_ID = os.environ.get('CHAT_ID', '@TWS_Teams')
+# টোকেন আর আইডি সরাসরি এখানে বসিয়ে দিচ্ছি যেন ভুল না হয়
+BOT_TOKEN = "8281243098:AAFf4wdCowXR6ent0peu7ngL_GYW7dXPqY8"
+CHAT_ID = "@TWS_Teams" 
 API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json"
 
-WIN_STK = "CAACAgUAAxkBAAMJaVaqlqfj3ezjjCGTEsZrhwbxTyAAAqQaAAI4ZQlVFQAB7e-5iBcyOAQ"
-LOSS_STK = "CAACAgUAAxkBAAMKaVaqlwtXJIhkqunkRi-DkH0LP_cAAuAeAAJ1FQhVCo9WKmwYFIw4BA"
-
 last_period = None
-prediction_history = []
 
-# ================= RENDER PORT FIX (HEALTH CHECK) =================
+# ================= RENDER HEALTH CHECK =================
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Bot is Running")
+        self.wfile.write(b"OK")
 
 def run_health_server():
-    # রেন্ডার সাধারণত ১০০০০ বা ৩০০০ পোর্টে চেক করে
     port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
-    print(f"✅ Health Check Server started on port {port}")
     server.serve_forever()
 
-# ================= UTILS =================
-def send_tg(method, data):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
+# ================= TELEGRAM SEND =================
+def send_msg(text):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     try:
-        requests.post(url, json={"chat_id": CHAT_ID, **data}, timeout=10)
+        payload = {"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"}
+        r = requests.post(url, json=payload, timeout=10)
+        print(f"📡 TG Response: {r.text}")
     except Exception as e:
         print(f"❌ TG Error: {e}")
 
-# ================= MAIN BOT LOGIC =================
-def start_monitoring():
+# ================= MAIN LOGIC =================
+def start_bot():
     global last_period
-    print("🚀 SAIF 1M Bot Monitoring Started...")
+    print("🚀 Prediction Loop Started...")
     
+    # শুরুতে একটা টেস্ট মেসেজ দিবে দেখার জন্য যে সব ঠিক আছে কি না
+    send_msg("✨ <b>SAIF BOT IS NOW ONLINE!</b>\nMonitoring WinGo 1M...")
+
     while True:
         try:
-            # API থেকে লেটেস্ট ডাটা আনা
+            # API রিকোয়েস্ট
             res = requests.get(f"{API_URL}?ts={int(time.time()*1000)}", timeout=15)
             data = res.json()
             
             list_data = data.get("data", {}).get("list", [])
             if not list_data:
+                print("⚠️ No data from API, retrying...")
                 time.sleep(10)
                 continue
 
@@ -61,46 +61,28 @@ def start_monitoring():
             current_p = str(current.get("issue") or current.get("issueNumber"))
             next_p = str(int(current_p) + 1)
 
+            print(f"📊 Current Period: {current_p} | Next: {next_p}")
+
             if last_period != next_p:
-                # ১. আগের রেজাল্ট চেক করে স্টিকার পাঠানো
-                if prediction_history:
-                    last_pred = prediction_history[0]
-                    num = int(str(current.get("number") or current.get("result"))[-1])
-                    actual = "BIGG" if num >= 5 else "SMALL"
-                    
-                    stk = WIN_STK if last_pred['p'] == actual else LOSS_STK
-                    send_tg("sendSticker", {"sticker": stk})
-
-                # ২. ১০ সেকেন্ড অপেক্ষা (API সিঙ্ক হওয়ার জন্য)
-                time.sleep(10)
-
-                # ৩. নতুন প্রেডিকশন পাঠানো
+                # প্রেডিকশন তৈরি
                 pred = random.choice(["BIGG", "SMALL"])
-                dhaka_tz = pytz.timezone('Asia/Dhaka')
-                now = datetime.now(dhaka_tz).strftime("%I:%M %p")
+                now = datetime.now(pytz.timezone('Asia/Dhaka')).strftime("%I:%M %p")
 
-                msg = (f"🎰 <b>WINGO 1M MARKET</b>\n"
+                msg = (f"🎰 <b>WINGO 1M</b>\n"
                        f"📊 <b>PERIOD:</b> <code>{next_p}</code>\n"
-                       f"⏰ <b>Time:</b> {now}\n"
+                       f"⏰ <b>TIME:</b> {now}\n"
                        f"🎯 <b>BUY:</b> {'🔴 BIGG' if pred == 'BIGG' else '🟢 SMALL'}\n\n"
-                       f"⚡️<b>THIS SIGNAL PROVIDED BY TWS TEAM</b>⚡️")
+                       f"⚡️<b>PROVIDED BY TWS TEAM</b>")
 
-                send_tg("sendMessage", {"text": msg, "parse_mode": "HTML"})
-                
-                # হিস্ট্রিতে সেভ রাখা
-                prediction_history.insert(0, {'p': pred})
+                send_msg(msg)
                 last_period = next_p
-                if len(prediction_history) > 5: prediction_history.pop()
-                print(f"✅ Prediction sent for {next_p}")
+                print(f"✅ Prediction Sent for {next_p}")
 
         except Exception as e:
-            print(f"⚠️ Syncing API...")
+            print(f"❌ Loop Error: {e}")
         
-        time.sleep(20) # ২০ সেকেন্ড পর পর চেক
+        time.sleep(15)
 
-# ================= EXECUTION =================
 if __name__ == "__main__":
-    # হেলথ চেক সার্ভারটি আলাদা থ্রেডে চালানো যাতে বটের কাজে বাধা না দেয়
     threading.Thread(target=run_health_server, daemon=True).start()
-    # মেইন বট প্রসেস শুরু
-    start_monitoring()
+    start_bot()
