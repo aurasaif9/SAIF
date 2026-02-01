@@ -2,11 +2,13 @@
 // TWS WINGO 1M BOT – FINAL RENDER VERSION (NODE 22 SAFE)
 
 import os from "os";
+import fetch from "node-fetch";
 
 /* ================= TELEGRAM CONFIG ================= */
-const TELEGRAM_BOT_TOKEN = process.env.BOT_TOKEN; // Render env variable
-const TELEGRAM_CHAT_ID = "@TWS_Teams";
+const TELEGRAM_BOT_TOKEN = process.env.BOT_TOKEN; // REQUIRED
+const TELEGRAM_CHAT_ID = process.env.CHAT_ID;     // REQUIRED (numeric)
 
+/* ================= STICKERS ================= */
 const WIN_STICKER =
   "CAACAgUAAxkBAAMJaVaqlqfj3ezjjCGTEsZrhwbxTyAAAqQaAAI4ZQlVFQAB7e-5iBcyOAQ";
 const LOSS_STICKER =
@@ -63,7 +65,7 @@ const IP_ADDR = getIP();
 
 /* ================= TELEGRAM ================= */
 async function sendToTelegram(message, isSticker = false) {
-  if (!TELEGRAM_BOT_TOKEN) return;
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
 
   try {
     const method = isSticker ? "sendSticker" : "sendMessage";
@@ -111,26 +113,29 @@ ${C.white}-------------------------------------------${C.reset}`);
 
 /* ================= LOGIC ================= */
 function getPatternPrediction() {
-  const patterns = [
-    "BIGG",
-    "SMALL",
-    "BIGG",
-    "BIGG",
-    "SMALL",
-    "SMALL",
-    "BIGG",
-    "SMALL"
-  ];
+  const patterns = ["BIGG", "SMALL", "BIGG", "SMALL", "BIGG"];
   return patterns[Math.floor(Math.random() * patterns.length)];
 }
 
 async function fetchGameResult() {
   try {
-    const res = await fetch(`${API_URL}?t=${Date.now()}`);
-    const j = await res.json();
+    const res = await fetch(`${API_URL}?t=${Date.now()}`, {
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/json"
+      }
+    });
+
+    const text = await res.text();
+
+    if (text.startsWith("<")) {
+      throw new Error("API returned HTML (blocked)");
+    }
+
+    const j = JSON.parse(text);
     return j?.data?.list || [];
   } catch (err) {
-    console.log("Fetch error:", err.message);
+    console.log("❌ Fetch error:", err.message);
     return [];
   }
 }
@@ -147,9 +152,7 @@ async function updatePanel() {
 
   if (lastPredictedPeriod !== nextPeriod) {
     if (predictionHistory.length > 0) {
-      const actualNum = parseInt(
-        String(cur.number || cur.result).slice(-1)
-      );
+      const actualNum = parseInt(String(cur.number || cur.result).slice(-1));
       const actualRes = actualNum >= 5 ? "BIGG" : "SMALL";
 
       await sendToTelegram(
@@ -180,18 +183,12 @@ async function updatePanel() {
 
     await sendToTelegram(msg);
 
-    predictionHistory.unshift({
-      period: nextPeriod,
-      predicted: p
-    });
-
+    predictionHistory.unshift({ period: nextPeriod, predicted: p });
     lastPredictedPeriod = nextPeriod;
   }
 
   predictionHistory.slice(0, 10).forEach((x, i) => {
-    console.log(
-      `${i + 1}. ${x.period.slice(-4)} → ${x.predicted}${C.reset}`
-    );
+    console.log(`${i + 1}. ${x.period.slice(-4)} → ${x.predicted}`);
   });
 
   nextUpdateTime = Date.now() + REFRESH_TIME;
@@ -200,14 +197,16 @@ async function updatePanel() {
 function countdown() {
   const diff = Math.max(0, nextUpdateTime - Date.now());
   process.stdout.write(
-    `\r${C.yellow}${C.bold}⏳ NEXT UPDATE ${Math.floor(
-      diff / 1000
-    )}s${C.reset}`
+    `\r${C.yellow}${C.bold}⏳ NEXT UPDATE ${Math.floor(diff / 1000)}s${C.reset}`
   );
 }
 
 /* ================= START ================= */
 (async function start() {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+    console.log("❌ BOT_TOKEN or CHAT_ID missing");
+  }
+
   console.log(`${C.green}🚀 BOT STARTED${C.reset}`);
   await updatePanel();
   setInterval(updatePanel, REFRESH_TIME);
