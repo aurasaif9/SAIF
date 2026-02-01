@@ -2,10 +2,13 @@ import time
 import random
 import requests
 import os
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from datetime import datetime
 import pytz
 
 # ================= CONFIG =================
+# রেন্ডার এনভায়রনমেন্ট থেকে টোকেন নেবে, না পেলে ডিফল্টটা ব্যবহার করবে
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '8281243098:AAFf4wdCowXR6ent0peu7ngL_GYW7dXPqY8')
 CHAT_ID = os.environ.get('CHAT_ID', '@TWS_Teams')
 API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json"
@@ -16,19 +19,36 @@ LOSS_STK = "CAACAgUAAxkBAAMKaVaqlwtXJIhkqunkRi-DkH0LP_cAAuAeAAJ1FQhVCo9WKmwYFIw4
 last_period = None
 prediction_history = []
 
+# ================= RENDER PORT FIX (HEALTH CHECK) =================
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is Running")
+
+def run_health_server():
+    # রেন্ডার সাধারণত ১০০০০ বা ৩০০০ পোর্টে চেক করে
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
+    print(f"✅ Health Check Server started on port {port}")
+    server.serve_forever()
+
+# ================= UTILS =================
 def send_tg(method, data):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
     try:
         requests.post(url, json={"chat_id": CHAT_ID, **data}, timeout=10)
-    except:
-        print("Telegram communication failed")
+    except Exception as e:
+        print(f"❌ TG Error: {e}")
 
-def run_bot():
+# ================= MAIN BOT LOGIC =================
+def start_monitoring():
     global last_period
-    print("🚀 SAIF 1M Python Bot is Monitoring API...")
+    print("🚀 SAIF 1M Bot Monitoring Started...")
     
     while True:
         try:
+            # API থেকে লেটেস্ট ডাটা আনা
             res = requests.get(f"{API_URL}?ts={int(time.time()*1000)}", timeout=15)
             data = res.json()
             
@@ -42,7 +62,7 @@ def run_bot():
             next_p = str(int(current_p) + 1)
 
             if last_period != next_p:
-                # ফলাফল পরীক্ষা
+                # ১. আগের রেজাল্ট চেক করে স্টিকার পাঠানো
                 if prediction_history:
                     last_pred = prediction_history[0]
                     num = int(str(current.get("number") or current.get("result"))[-1])
@@ -51,9 +71,10 @@ def run_bot():
                     stk = WIN_STK if last_pred['p'] == actual else LOSS_STK
                     send_tg("sendSticker", {"sticker": stk})
 
-                time.sleep(10) # ১০ সেকেন্ড সিঙ্ক ওয়েট
+                # ২. ১০ সেকেন্ড অপেক্ষা (API সিঙ্ক হওয়ার জন্য)
+                time.sleep(10)
 
-                # নতুন সিগন্যাল
+                # ৩. নতুন প্রেডিকশন পাঠানো
                 pred = random.choice(["BIGG", "SMALL"])
                 dhaka_tz = pytz.timezone('Asia/Dhaka')
                 now = datetime.now(dhaka_tz).strftime("%I:%M %p")
@@ -66,14 +87,20 @@ def run_bot():
 
                 send_tg("sendMessage", {"text": msg, "parse_mode": "HTML"})
                 
+                # হিস্ট্রিতে সেভ রাখা
                 prediction_history.insert(0, {'p': pred})
                 last_period = next_p
                 if len(prediction_history) > 5: prediction_history.pop()
+                print(f"✅ Prediction sent for {next_p}")
 
         except Exception as e:
-            print(f"Waiting for API sync...")
+            print(f"⚠️ Syncing API...")
         
-        time.sleep(20)
+        time.sleep(20) # ২০ সেকেন্ড পর পর চেক
 
+# ================= EXECUTION =================
 if __name__ == "__main__":
-    run_bot()
+    # হেলথ চেক সার্ভারটি আলাদা থ্রেডে চালানো যাতে বটের কাজে বাধা না দেয়
+    threading.Thread(target=run_health_server, daemon=True).start()
+    # মেইন বট প্রসেস শুরু
+    start_monitoring()
