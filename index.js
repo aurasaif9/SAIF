@@ -1,32 +1,16 @@
 #!/usr/bin/env node
-/**
- * Optimized for 24/7 Hosting (Render / GitHub Actions)
- * No interactive input - uses Environment Variables or Defaults
- */
 
-import os from "os";
+import http from "http";
 
 // ================= CONFIG & ENV =================
 const TELEGRAM_BOT_TOKEN = process.env.BOT_TOKEN || "8281243098:AAFf4wdCowXR6ent0peu7ngL_GYW7dXPqY8"; 
 const TELEGRAM_CHAT_ID = process.env.CHAT_ID || "@TWS_Teams"; 
-const USER_NAME = process.env.USER_NAME || "SAIF_PRO";
-const USER_COUNTRY = process.env.USER_COUNTRY || "BD";
+const API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json";
 
 const WIN_STICKER = "CAACAgUAAxkBAAMJaVaqlqfj3ezjjCGTEsZrhwbxTyAAAqQaAAI4ZQlVFQAB7e-5iBcyOAQ";
 const LOSS_STICKER = "CAACAgUAAxkBAAMKaVaqlwtXJIhkqunkRi-DkH0LP_cAAuAeAAJ1FQhVCo9WKmwYFIw4BA";
 
-const API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json";
-const REFRESH_TIME = 20000; // Increased slightly to avoid API bans
-
-// ================= COLORS & UI =================
-const C = {
-  reset: "\x1b[0m",
-  green: "\x1b[1;32m",
-  red: "\x1b[1;31m",
-  cyan: "\x1b[1;36m",
-  yellow: "\x1b[1;33m",
-  white: "\x1b[1;37m"
-};
+const REFRESH_TIME = 20000; // ২০ সেকেন্ড পর পর চেক করবে
 
 // ================= GLOBALS =================
 let predictionHistory = [];
@@ -34,6 +18,138 @@ let lastPredictedPeriod = null;
 let isProcessing = false;
 
 // ================= UTILS =================
+const delay = ms => new Promise(res => setTimeout(res, ms));
+
+async function sendToTelegram(message, isSticker = false) {
+  try {
+    const type = isSticker ? "sendSticker" : "sendMessage";
+    const bodyKey = isSticker ? "sticker" : "text";
+    
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${type}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: TELEGRAM_CHAT_ID,
+        [bodyKey]: message,
+        parse_mode: isSticker ? null : "HTML"
+      })
+    });
+  } catch (e) {
+    console.error("Telegram error:", e.message);
+  }
+}
+
+function getPatternPrediction() {
+  const patterns = ["BIGG", "SMALL"];
+  return patterns[Math.floor(Math.random() * patterns.length)];
+}
+
+// ================= CORE LOGIC =================
+async function updatePanel() {
+  if (isProcessing) return;
+  isProcessing = true;
+
+  try {
+    const res = await fetch(`${API_URL}?ts=${Date.now()}`, {
+      headers: {
+        "accept": "application/json, text/plain, */*",
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "referer": "https://draw.ar-lottery01.com/"
+      }
+    });
+
+    const rawText = await res.text();
+    
+    // Check if response is valid JSON
+    let j;
+    try {
+      j = JSON.parse(rawText);
+    } catch (e) {
+      console.log("⚠️ Received HTML instead of JSON. Server might be blocking or down.");
+      isProcessing = false;
+      return;
+    }
+
+    const data = j?.data?.list || [];
+    if (!data.length) {
+      isProcessing = false;
+      return;
+    }
+
+    const cur = data[0];
+    const currentPeriod = cur.issue || cur.issueNumber;
+    const nextPeriod = (BigInt(currentPeriod) + 1n).toString();
+
+    if (lastPredictedPeriod !== nextPeriod) {
+      
+      // 1. Result Check (Win/Loss)
+      if (predictionHistory.length > 0 && predictionHistory[0].actual === null) {
+        const actualNum = parseInt(String(cur.number || cur.result).slice(-1));
+        const actualRes = actualNum >= 5 ? "BIGG" : "SMALL";
+        predictionHistory[0].actual = actualRes;
+
+        if (predictionHistory[0].predicted === actualRes) {
+          await sendToTelegram(WIN_STICKER, true);
+        } else {
+          await sendToTelegram(LOSS_STICKER, true);
+        }
+      }
+
+      // 2. Waiting Delay (10 seconds)
+      console.log(`\n⏳ Next Period Found: ${nextPeriod}. Waiting 10s...`);
+      await delay(10000); 
+
+      // 3. Send Prediction
+      const p = getPatternPrediction();
+      const timeNow = new Date().toLocaleTimeString("en-US", { 
+        hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Dhaka' 
+      });
+      
+      const msg = `🎰 <b>WINGO 1M MARKET</b>\n` +
+                  `📊 <b>PERIOD:</b> <code>${nextPeriod}</code>\n` +
+                  `⏰ <b>Time:</b> ${timeNow}\n` +
+                  `🎯 <b>BUY:</b> ${p === "BIGG" ? "🔴 BIGG" : "🟢 SMALL"}\n\n` +
+                  `⚡️<b>THIS SIGNAL PROVIDED BY TWS TEAM</b>⚡️\n\n` +
+                  `📞 @OWNER_TWS`;
+      
+      await sendToTelegram(msg);
+      console.log(`✅ Signal Sent for ${nextPeriod}: ${p}`);
+
+      predictionHistory.unshift({
+        period: nextPeriod,
+        predicted: p,
+        actual: null
+      });
+
+      lastPredictedPeriod = nextPeriod;
+      if (predictionHistory.length > 5) predictionHistory.pop();
+    }
+  } catch (err) {
+    console.error("Critical Loop Error:", err.message);
+  } finally {
+    isProcessing = false;
+  }
+}
+
+// ================= SERVER FOR RENDER =================
+// Render-এ 'No open ports' এরর এড়াতে এই অংশটি প্রয়োজন
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Bot is running 24/7\n');
+});
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`Server is listening on port ${PORT}`);
+});
+
+// ================= START =================
+console.log("🚀 Bot Started Successfully!");
+setInterval(updatePanel, REFRESH_TIME);
+
+// Global Error Handling
+process.on('uncaughtException', (err) => console.log('Uncaught Exception:', err));
+process.on('unhandledRejection', (err) => console.log('Unhandled Rejection:', err));
 const delay = ms => new Promise(res => setTimeout(res, ms));
 
 async function sendToTelegram(message, isSticker = false) {
