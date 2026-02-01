@@ -14,16 +14,22 @@ API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json
 
 last_period = None
 
-# ================= HEALTH CHECK =================
+# ================= FIXING 501 ERROR (HEALTH CHECK) =================
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"SERVER_OK")
+    
+    # এই অংশটুকু 501 এরর বন্ধ করবে
+    def do_HEAD(self):
+        self.send_response(200)
+        self.end_headers()
 
 def run_health_server():
     port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
+    print(f"✅ Health Check Server on port {port}")
     server.serve_forever()
 
 # ================= TELEGRAM SEND =================
@@ -36,36 +42,34 @@ def send_msg(text):
 # ================= PREDICTION ENGINE =================
 def start_bot():
     global last_period
-    print("🚀 Prediction engine is searching for data...")
+    print("🚀 Prediction engine active...")
     
     while True:
         try:
-            # API থেকে ডাটা আনা (Cache এড়াতে টাইমস্ট্যাম্পসহ)
-            res = requests.get(f"{API_URL}?ts={int(time.time()*1000)}", timeout=10, headers={'User-Agent': 'Mozilla/5.0'})
+            # API রিকোয়েস্ট (Browser Agent যোগ করা হয়েছে যেন ব্লক না করে)
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+            res = requests.get(f"{API_URL}?ts={int(time.time()*1000)}", timeout=10, headers=headers)
             data = res.json()
             
-            # ডাটা স্ট্রাকচার চেক
             list_data = data.get("data", {}).get("list", [])
             if not list_data:
-                print("☁️ API logic: Waiting for list data...")
                 time.sleep(5)
                 continue
 
-            # বর্তমান পিরিয়ড বের করা
+            # বর্তমান ডাটা
             current_item = list_data[0]
+            # issue বা issueNumber যেকোনো একটা পেলেই হবে
             current_p = str(current_item.get("issue") or current_item.get("issueNumber"))
-            
-            # পরবর্তী পিরিয়ড ক্যালকুলেট করা
             next_p = str(int(current_p) + 1)
 
-            # যদি নতুন পিরিয়ড পাওয়া যায়
             if last_period != next_p:
                 print(f"🎯 New Period Detected: {next_p}")
                 
-                # প্রেডিকশন জেনারেট
+                # ৫ সেকেন্ড রিল্যাক্স যেন API আপডেট হয়
+                time.sleep(5)
+
                 pred = random.choice(["BIGG", "SMALL"])
-                dhaka_tz = pytz.timezone('Asia/Dhaka')
-                now = datetime.now(dhaka_tz).strftime("%I:%M %p")
+                now = datetime.now(pytz.timezone('Asia/Dhaka')).strftime("%I:%M %p")
 
                 msg = (f"🎰 <b>WINGO 1M</b>\n"
                        f"📊 <b>PERIOD:</b> <code>{next_p}</code>\n"
@@ -75,12 +79,12 @@ def start_bot():
 
                 send_msg(msg)
                 last_period = next_p
-                print(f"✅ Message sent for {next_p}")
+                print(f"✅ Sent: {next_p}")
 
         except Exception as e:
-            print(f"⚠️ Tracking issue: {e}")
+            print(f"⚠️ Tracking...")
         
-        time.sleep(5) # প্রতি ৫ সেকেন্ডে ডাটা চেক করবে
+        time.sleep(5) 
 
 if __name__ == "__main__":
     threading.Thread(target=run_health_server, daemon=True).start()
