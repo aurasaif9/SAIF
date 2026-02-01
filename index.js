@@ -16,7 +16,7 @@ let predictionHistory = [];
 let lastPredictedPeriod = null;
 let isProcessing = false;
 
-// ================= UTILS (Fixed Duplicate Declaration) =================
+// ================= UTILS =================
 const sleep = ms => new Promise(res => setTimeout(res, ms));
 
 async function sendToTelegram(message, isSticker = false) {
@@ -34,6 +34,111 @@ async function sendToTelegram(message, isSticker = false) {
       })
     });
   } catch (e) {
+    console.error("Telegram error:", e.message);
+  }
+}
+
+function getPatternPrediction() {
+  return Math.random() > 0.5 ? "BIGG" : "SMALL";
+}
+
+// ================= CORE LOGIC =================
+async function updatePanel() {
+  if (isProcessing) return;
+  isProcessing = true;
+
+  try {
+    const res = await fetch(`${API_URL}?ts=${Date.now()}`, {
+      headers: {
+        "accept": "application/json, text/plain, */*",
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "referer": "https://draw.ar-lottery01.com/"
+      }
+    });
+
+    const rawText = await res.text();
+    
+    let j;
+    try {
+      j = JSON.parse(rawText);
+    } catch (e) {
+      console.log("⚠️ API Error: HTML instead of JSON.");
+      isProcessing = false;
+      return;
+    }
+
+    const data = j?.data?.list || [];
+    if (!data.length) {
+      isProcessing = false;
+      return;
+    }
+
+    const cur = data[0];
+    const currentPeriod = cur.issue || cur.issueNumber;
+    const nextPeriod = (BigInt(currentPeriod) + 1n).toString();
+
+    if (lastPredictedPeriod !== nextPeriod) {
+      // 1. Result Check
+      if (predictionHistory.length > 0 && predictionHistory[0].actual === null) {
+        const actualNum = parseInt(String(cur.number || cur.result).slice(-1));
+        const actualRes = actualNum >= 5 ? "BIGG" : "SMALL";
+        predictionHistory[0].actual = actualRes;
+
+        if (predictionHistory[0].predicted === actualRes) {
+          await sendToTelegram(WIN_STICKER, true);
+        } else {
+          await sendToTelegram(LOSS_STICKER, true);
+        }
+      }
+
+      // 2. Wait 10s
+      console.log(`\n⏳ Next Period: ${nextPeriod}. Waiting 10s...`);
+      await sleep(10000); 
+
+      // 3. Send Prediction
+      const p = getPatternPrediction();
+      const timeNow = new Date().toLocaleTimeString("en-US", { 
+        hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Dhaka' 
+      });
+      
+      const msg = `🎰 <b>WINGO 1M MARKET</b>\n` +
+                  `📊 <b>PERIOD:</b> <code>${nextPeriod}</code>\n` +
+                  `⏰ <b>Time:</b> ${timeNow}\n` +
+                  `🎯 <b>BUY:</b> ${p === "BIGG" ? "🔴 BIGG" : "🟢 SMALL"}\n\n` +
+                  `⚡️<b>THIS SIGNAL PROVIDED BY TWS TEAM</b>⚡️\n\n` +
+                  `📞 @OWNER_TWS`;
+      
+      await sendToTelegram(msg);
+      console.log(`✅ Sent Prediction: ${p}`);
+
+      predictionHistory.unshift({ period: nextPeriod, predicted: p, actual: null });
+      lastPredictedPeriod = nextPeriod;
+      if (predictionHistory.length > 5) predictionHistory.pop();
+    }
+  } catch (err) {
+    console.error("Critical Loop Error:", err.message);
+  } finally {
+    isProcessing = false;
+  }
+}
+
+// ================= RENDER PORT FIX =================
+const server = http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end('Bot is Active');
+});
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`Server live on port ${PORT}`);
+});
+
+// ================= RUNNING =================
+console.log("🚀 Starting Bot Version 2.0...");
+setInterval(updatePanel, REFRESH_TIME);
+
+process.on('uncaughtException', (err) => console.log('Error Handler:', err.message));
+process.on('unhandledRejection', (err) => console.log('Rejection Handler:', err.message));
     console.error("Telegram error:", e.message);
   }
 }
