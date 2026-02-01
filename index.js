@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// TWS WINGO 1M BOT – RENDER READY (FIXED NAME & COUNTRY)
+// TWS WINGO 1M BOT – RENDER READY + LIVE LOG CONFIRMATION
 
 import os from "os";
 
 // ================= TELEGRAM CONFIG =================
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "PASTE_TOKEN_HERE";
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "@TWS_Teams";
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 const WIN_STICKER =
   "CAACAgUAAxkBAAMJaVaqlqfj3ezjjCGTEsZrhwbxTyAAAqQaAAI4ZQlVFQAB7e-5iBcyOAQ";
@@ -67,7 +67,7 @@ async function sendToTelegram(message, isSticker = false) {
     const type = isSticker ? "sendSticker" : "sendMessage";
     const bodyKey = isSticker ? "sticker" : "text";
 
-    await fetch(
+    const res = await fetch(
       `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${type}`,
       {
         method: "POST",
@@ -79,7 +79,19 @@ async function sendToTelegram(message, isSticker = false) {
         })
       }
     );
-  } catch {}
+
+    if (res.ok) {
+      console.log(
+        isSticker
+          ? "🟢 STICKER SENT TO TELEGRAM"
+          : "🟢 MESSAGE SENT TO TELEGRAM"
+      );
+    } else {
+      console.log("🔴 TELEGRAM SEND FAILED");
+    }
+  } catch (e) {
+    console.log("❌ TELEGRAM ERROR:", e.message);
+  }
 }
 
 // ================= UI =================
@@ -103,16 +115,7 @@ ${C.white}-----------------------------------------------------------${C.reset}`
 
 // ================= LOGIC =================
 function getPatternPrediction() {
-  const patterns = [
-    "BIGG",
-    "SMALL",
-    "BIGG",
-    "BIGG",
-    "SMALL",
-    "SMALL",
-    "BIGG",
-    "SMALL"
-  ];
+  const patterns = ["BIGG", "SMALL", "BIGG", "BIGG", "SMALL", "SMALL"];
   return patterns[Math.floor(Math.random() * patterns.length)];
 }
 
@@ -128,7 +131,10 @@ async function fetchGameResult() {
 
 async function updatePanel() {
   const data = await fetchGameResult();
-  if (!data.length) return;
+  if (!data.length) {
+    console.log("⏳ WAITING FOR GAME DATA...");
+    return;
+  }
 
   const cur = data[0];
   const currentPeriod = cur.issue || cur.issueNumber;
@@ -137,7 +143,7 @@ async function updatePanel() {
   drawHeader();
 
   if (lastPredictedPeriod !== nextPeriod) {
-    // ===== RESULT CHECK =====
+    // ===== CHECK RESULT =====
     if (predictionHistory.length > 0) {
       const actualNum = parseInt(
         String(cur.number || cur.result).slice(-1)
@@ -153,7 +159,7 @@ async function updatePanel() {
       );
     }
 
-    console.log(`\n${C.magenta}⏳ WAITING 10S FOR TELEGRAM SIGNAL...${C.reset}`);
+    console.log("⏳ WAITING 10 SECONDS BEFORE SENDING SIGNAL...");
     await delay(10000);
 
     const p = getPatternPrediction();
@@ -173,6 +179,10 @@ async function updatePanel() {
 
     await sendToTelegram(msg);
 
+    console.log(
+      `✅ PREDICTION SENT → PERIOD ${nextPeriod} → ${p}`
+    );
+
     predictionHistory.unshift({
       period: nextPeriod,
       predicted: p,
@@ -185,27 +195,30 @@ async function updatePanel() {
   predictionHistory.slice(0, 10).forEach((x, i) => {
     const res =
       x.actual === null
-        ? `${C.yellow}WAIT`
+        ? "WAIT"
         : x.predicted === x.actual
-        ? `${C.green}WIN ✅`
-        : `${C.red}LOSS ❌`;
+        ? "WIN ✅"
+        : "LOSS ❌";
 
     console.log(
-      ` ${i + 1}. ${x.period.slice(-4)} → ${x.predicted} → ${res}${C.reset}`
+      `${i + 1}. ${x.period.slice(-4)} → ${x.predicted} → ${res}`
     );
   });
 
-  console.log(`${C.white}-----------------------------------------------------------${C.reset}`);
+  console.log("-----------------------------------------------------------");
   nextUpdateTime = Date.now() + REFRESH_TIME;
 }
 
 function countdown() {
-  const s = Math.max(0, Math.floor((nextUpdateTime - Date.now()) / 1000));
-  process.stdout.write(`\r${C.yellow}⏳ UPDATE IN : ${s}s${C.reset}`);
+  const s = Math.max(
+    0,
+    Math.floor((nextUpdateTime - Date.now()) / 1000)
+  );
+  process.stdout.write(`\r⏳ NEXT UPDATE IN : ${s}s`);
 }
 
 // ================= START =================
-console.log("🚀 TWS WINGO 1M BOT STARTED (RENDER MODE)");
+console.log("🚀 TWS WINGO 1M BOT STARTED (RENDER LIVE)");
 updatePanel();
 setInterval(updatePanel, REFRESH_TIME);
 setInterval(countdown, 1000);
