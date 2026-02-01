@@ -1,39 +1,73 @@
 #!/usr/bin/env node
 import http from "http";
 
-const TELEGRAM_BOT_TOKEN = process.env.BOT_TOKEN || "8281243098:AAFf4wdCowXR6ent0peu7ngL_GYW7dXPqY8"; 
-const TELEGRAM_CHAT_ID = process.env.CHAT_ID || "@TWS_Teams"; 
+// --- CONFIG ---
+const BOT_TOKEN = process.env.BOT_TOKEN || "8281243098:AAFf4wdCowXR6ent0peu7ngL_GYW7dXPqY8"; 
+const CHAT_ID = process.env.CHAT_ID || "@TWS_Teams"; 
 const API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json";
 
-const WIN_STICKER = "CAACAgUAAxkBAAMJaVaqlqfj3ezjjCGTEsZrhwbxTyAAAqQaAAI4ZQlVFQAB7e-5iBcyOAQ";
-const LOSS_STICKER = "CAACAgUAAxkBAAMKaVaqlwtXJIhkqunkRi-DkH0LP_cAAuAeAAJ1FQhVCo9WKmwYFIw4BA";
+const WIN_STK = "CAACAgUAAxkBAAMJaVaqlqfj3ezjjCGTEsZrhwbxTyAAAqQaAAI4ZQlVFQAB7e-5iBcyOAQ";
+const LOSS_STK = "CAACAgUAAxkBAAMKaVaqlwtXJIhkqunkRi-DkH0LP_cAAuAeAAJ1FQhVCo9WKmwYFIw4BA";
 
-let predictionHistory = [];
-let lastPredictedPeriod = null;
-let isProcessing = false;
+let lastPeriod = null;
+let history = [];
+let processing = false;
 
+// --- UTILS ---
 const sleep = ms => new Promise(res => setTimeout(res, ms));
 
-async function sendToTelegram(message, isSticker = false) {
+async function callTG(type, body) {
   try {
-    const type = isSticker ? "sendSticker" : "sendMessage";
-    const bodyKey = isSticker ? "sticker" : "text";
-    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${type}`, {
+    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${type}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, [bodyKey]: message, parse_mode: "HTML" })
+      body: JSON.stringify({ chat_id: CHAT_ID, ...body })
     });
-  } catch (e) { console.log(e.message); }
+  } catch (e) { console.log("TG Error"); }
 }
 
-async function updatePanel() {
-  if (isProcessing) return;
-  isProcessing = true;
+async function runLogic() {
+  if (processing) return;
+  processing = true;
   try {
-    const res = await fetch(`${API_URL}?ts=${Date.now()}`, {
-      headers: { "user-agent": "Mozilla/5.0", "referer": "https://draw.ar-lottery01.com/" }
-    });
-    const j = await res.json();
+    const res = await fetch(`${API_URL}?ts=${Date.now()}`);
+    const text = await res.text();
+    let j;
+    try { j = JSON.parse(text); } catch(e) { processing = false; return; }
+
+    const data = j?.data?.list || [];
+    if (!data.length) { processing = false; return; }
+
+    const cur = data[0];
+    const curP = cur.issue || cur.issueNumber;
+    const nextP = (BigInt(curP) + 1n).toString();
+
+    if (lastPeriod !== nextP) {
+      if (history.length > 0 && history[0].actual === null) {
+        const resNum = parseInt(String(cur.number || cur.result).slice(-1));
+        const resType = resNum >= 5 ? "BIGG" : "SMALL";
+        await callTG("sendSticker", { sticker: history[0].predicted === resType ? WIN_STK : LOSS_STK });
+      }
+      
+      await sleep(10000); // 10s Delay
+      const p = Math.random() > 0.5 ? "BIGG" : "SMALL";
+      const time = new Date().toLocaleTimeString("en-US", { hour12: true, timeZone: 'Asia/Dhaka' });
+      
+      const msg = `🎰 <b>WINGO 1M</b>\n📊 <b>PERIOD:</b> <code>${nextP}</code>\n⏰ <b>TIME:</b> ${time}\n🎯 <b>BUY:</b> ${p === "BIGG" ? "🔴 BIGG" : "🟢 SMALL"}`;
+      
+      await callTG("sendMessage", { text: msg, parse_mode: "HTML" });
+      history.unshift({ period: nextP, predicted: p, actual: null });
+      lastPeriod = nextP;
+      if (history.length > 5) history.pop();
+    }
+  } catch (e) { console.log("Loop Error"); }
+  processing = false;
+}
+
+// --- START ---
+http.createServer((q, s) => s.end("Bot Active")).listen(process.env.PORT || 3000);
+setInterval(runLogic, 20000);
+console.log("🚀 Bot Running...");
     const data = j?.data?.list || [];
     if (!data.length) { isProcessing = false; return; }
 
