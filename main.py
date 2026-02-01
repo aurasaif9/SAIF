@@ -1,39 +1,84 @@
-#!/usr/bin/env node
-import http from "http";
+import time
+import random
+import requests
+import os
+from datetime import datetime
+import pytz
 
-// ================= CONFIG & ENV =================
-const BOT_TOKEN = process.env.BOT_TOKEN || "8281243098:AAFf4wdCowXR6ent0peu7ngL_GYW7dXPqY8"; 
-const CHAT_ID = process.env.CHAT_ID || "@TWS_Teams"; 
-const API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json";
+# ================= CONFIG =================
+BOT_TOKEN = os.environ.get('BOT_TOKEN', '8281243098:AAFf4wdCowXR6ent0peu7ngL_GYW7dXPqY8')
+CHAT_ID = os.environ.get('CHAT_ID', '@TWS_Teams')
+API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json"
 
-const WIN_STK = "CAACAgUAAxkBAAMJaVaqlqfj3ezjjCGTEsZrhwbxTyAAAqQaAAI4ZQlVFQAB7e-5iBcyOAQ";
-const LOSS_STK = "CAACAgUAAxkBAAMKaVaqlwtXJIhkqunkRi-DkH0LP_cAAuAeAAJ1FQhVCo9WKmwYFIw4BA";
+WIN_STK = "CAACAgUAAxkBAAMJaVaqlqfj3ezjjCGTEsZrhwbxTyAAAqQaAAI4ZQlVFQAB7e-5iBcyOAQ"
+LOSS_STK = "CAACAgUAAxkBAAMKaVaqlwtXJIhkqunkRi-DkH0LP_cAAuAeAAJ1FQhVCo9WKmwYFIw4BA"
 
-let lastPeriod = null;
-let history = [];
-let isProcessing = false;
+last_period = None
+prediction_history = []
 
-// ================= UTILS =================
-const sleep = ms => new Promise(res => setTimeout(res, ms));
+def send_tg(method, data):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
+    try:
+        requests.post(url, json={"chat_id": CHAT_ID, **data})
+    except:
+        print("Telegram error")
 
-async function sendTG(type, body) {
-  try {
-    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${type}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: CHAT_ID, ...body })
-    });
-  } catch (e) { console.log("Telegram connection issue"); }
-}
+def run_bot():
+    global last_period
+    while True:
+        try:
+            # API থেকে ডেটা আনা
+            res = requests.get(f"{API_URL}?ts={int(time.time()*1000)}", timeout=10)
+            data = res.json()
+            
+            list_data = data.get("data", {}).get("list", [])
+            if not list_data:
+                time.sleep(10)
+                continue
 
-// ================= MAIN LOGIC =================
-async function runBot() {
-  if (isProcessing) return;
-  isProcessing = true;
+            current = list_data[0]
+            current_p = str(current.get("issue") or current.get("issueNumber"))
+            next_p = str(int(current_p) + 1)
 
-  try {
-    const response = await fetch(`${API_URL}?ts=${Date.now()}`, {
-      headers: { "user-agent": "Mozilla/5.0" }
+            if last_period != next_p:
+                # আগের প্রেডিকশন উইন না লস চেক
+                if prediction_history:
+                    last_pred = prediction_history[0]
+                    num = int(str(current.get("number") or current.get("result"))[-1])
+                    actual = "BIGG" if num >= 5 else "SMALL"
+                    
+                    stk = WIN_STK if last_pred['p'] == actual else LOSS_STK
+                    send_tg("sendSticker", {"sticker": stk})
+
+                # ১০ সেকেন্ড ওয়েট
+                print(f"New Period Detected: {next_p}. Waiting 10s...")
+                time.sleep(10)
+
+                # নতুন প্রেডিকশন
+                pred = random.choice(["BIGG", "SMALL"])
+                dhaka_tz = pytz.timezone('Asia/Dhaka')
+                now = datetime.now(dhaka_tz).strftime("%I:%M %p")
+
+                msg = (f"🎰 <b>WINGO 1M MARKET</b>\n"
+                       f"📊 <b>PERIOD:</b> <code>{next_p}</code>\n"
+                       f"⏰ <b>Time:</b> {now}\n"
+                       f"🎯 <b>BUY:</b> {'🔴 BIGG' if pred == 'BIGG' else '🟢 SMALL'}\n\n"
+                       f"⚡️<b>THIS SIGNAL PROVIDED BY TWS TEAM</b>⚡️")
+
+                send_tg("sendMessage", {"text": msg, "parse_mode": "HTML"})
+                
+                prediction_history.insert(0, {'p': pred})
+                last_period = next_p
+                if len(prediction_history) > 5: prediction_history.pop()
+
+        except Exception as e:
+            print(f"Loop error: {e}")
+        
+        time.sleep(15) # ১৫ সেকেন্ড পর পর চেক করবে
+
+if __name__ == "__main__":
+    print("🚀 SAIF 1M Python Bot is Live!")
+    run_bot()
     });
     
     const text = await response.text();
