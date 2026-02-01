@@ -1,7 +1,18 @@
 #!/usr/bin/env node
-// TWS WINGO 1M BOT – RENDER READY + LIVE LOG CONFIRMATION
+// TWS WINGO 1M BOT + MINI SERVER (RENDER LIVE FIX)
 
 import os from "os";
+import http from "http";
+
+// ================== MINI HTTP SERVER ==================
+const PORT = process.env.PORT || 3000;
+
+http.createServer((req, res) => {
+  res.writeHead(200, { "Content-Type": "text/plain" });
+  res.end("✅ TWS WINGO 1M BOT IS LIVE\n");
+}).listen(PORT, () => {
+  console.log(`🌐 HTTP SERVER RUNNING ON PORT ${PORT}`);
+});
 
 // ================= TELEGRAM CONFIG =================
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -12,30 +23,9 @@ const WIN_STICKER =
 const LOSS_STICKER =
   "CAACAgUAAxkBAAMKaVaqlwtXJIhkqunkRi-DkH0LP_cAAuAeAAJ1FQhVCo9WKmwYFIw4BA";
 
-// ================= USER INFO (FIXED) =================
+// ================= USER INFO =================
 const USER_NAME = process.env.USER_NAME || "TWS BOT";
 const USER_COUNTRY = process.env.USER_COUNTRY || "BANGLADESH 🇧🇩";
-
-// ================= COLORS =================
-const C = {
-  reset: "\x1b[0m",
-  white: "\x1b[1;37m",
-  green: "\x1b[1;32m",
-  red: "\x1b[1;31m",
-  cyan: "\x1b[1;36m",
-  yellow: "\x1b[1;33m",
-  magenta: "\x1b[1;35m",
-  bold: "\x1b[1m"
-};
-
-const RANDOM_COLORS = [
-  "\x1b[1;36m",
-  "\x1b[1;31m",
-  "\x1b[1;32m",
-  "\x1b[1;33m",
-  "\x1b[1;35m"
-];
-const clr = RANDOM_COLORS[Math.floor(Math.random() * RANDOM_COLORS.length)];
 
 // ================= CONFIG =================
 const API_URL =
@@ -81,11 +71,7 @@ async function sendToTelegram(message, isSticker = false) {
     );
 
     if (res.ok) {
-      console.log(
-        isSticker
-          ? "🟢 STICKER SENT TO TELEGRAM"
-          : "🟢 MESSAGE SENT TO TELEGRAM"
-      );
+      console.log(isSticker ? "🟢 STICKER SENT" : "🟢 MESSAGE SENT");
     } else {
       console.log("🔴 TELEGRAM SEND FAILED");
     }
@@ -94,28 +80,9 @@ async function sendToTelegram(message, isSticker = false) {
   }
 }
 
-// ================= UI =================
-function drawHeader() {
-  console.clear();
-  const time = new Date().toLocaleTimeString("en-US");
-
-  console.log(`${clr}
-  ███████╗ █████╗ ██╗███████╗
-  ██╔════╝██╔══██╗██║██╔════╝
-  ███████╗███████║██║█████╗
-  ╚════██║██╔══██║██║██╔══╝
-  ███████║██║  ██║██║██║
-  ╚══════╝╚═╝  ╚═╝╚═╝╚═╝   1M${C.reset}`);
-
-  console.log(`${C.white}-----------------------------------------------------------
- ${C.green}IP ADDRESS   : ${clr}${IP_ADDR}   ${C.green}LIVE TIME : ${clr}${time}
- ${C.green}NAME         : ${C.white}${USER_NAME}       ${C.green}COUNTRY : ${C.white}${USER_COUNTRY}
-${C.white}-----------------------------------------------------------${C.reset}`);
-}
-
 // ================= LOGIC =================
 function getPatternPrediction() {
-  const patterns = ["BIGG", "SMALL", "BIGG", "BIGG", "SMALL", "SMALL"];
+  const patterns = ["BIGG", "SMALL", "BIGG", "SMALL", "BIGG", "SMALL"];
   return patterns[Math.floor(Math.random() * patterns.length)];
 }
 
@@ -140,16 +107,13 @@ async function updatePanel() {
   const currentPeriod = cur.issue || cur.issueNumber;
   const nextPeriod = (BigInt(currentPeriod) + 1n).toString();
 
-  drawHeader();
-
   if (lastPredictedPeriod !== nextPeriod) {
-    // ===== CHECK RESULT =====
+    // RESULT CHECK
     if (predictionHistory.length > 0) {
       const actualNum = parseInt(
         String(cur.number || cur.result).slice(-1)
       );
       const actualRes = actualNum >= 5 ? "BIGG" : "SMALL";
-      predictionHistory[0].actual = actualRes;
 
       await sendToTelegram(
         predictionHistory[0].predicted === actualRes
@@ -159,7 +123,7 @@ async function updatePanel() {
       );
     }
 
-    console.log("⏳ WAITING 10 SECONDS BEFORE SENDING SIGNAL...");
+    console.log("⏳ WAITING 10 SECONDS...");
     await delay(10000);
 
     const p = getPatternPrediction();
@@ -178,34 +142,16 @@ async function updatePanel() {
       `📞 @OWNER_TWS`;
 
     await sendToTelegram(msg);
-
-    console.log(
-      `✅ PREDICTION SENT → PERIOD ${nextPeriod} → ${p}`
-    );
+    console.log(`✅ PREDICTION SENT → ${nextPeriod} → ${p}`);
 
     predictionHistory.unshift({
       period: nextPeriod,
-      predicted: p,
-      actual: null
+      predicted: p
     });
 
     lastPredictedPeriod = nextPeriod;
   }
 
-  predictionHistory.slice(0, 10).forEach((x, i) => {
-    const res =
-      x.actual === null
-        ? "WAIT"
-        : x.predicted === x.actual
-        ? "WIN ✅"
-        : "LOSS ❌";
-
-    console.log(
-      `${i + 1}. ${x.period.slice(-4)} → ${x.predicted} → ${res}`
-    );
-  });
-
-  console.log("-----------------------------------------------------------");
   nextUpdateTime = Date.now() + REFRESH_TIME;
 }
 
@@ -218,7 +164,9 @@ function countdown() {
 }
 
 // ================= START =================
-console.log("🚀 TWS WINGO 1M BOT STARTED (RENDER LIVE)");
+console.log("🚀 TWS WINGO 1M BOT + SERVER STARTED (RENDER LIVE)");
+console.log(`📡 IP: ${IP_ADDR} | NAME: ${USER_NAME} | COUNTRY: ${USER_COUNTRY}`);
+
 updatePanel();
 setInterval(updatePanel, REFRESH_TIME);
 setInterval(countdown, 1000);
