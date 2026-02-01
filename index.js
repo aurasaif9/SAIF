@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import http from "http";
 
-// --- CONFIG ---
+// ================= CONFIG & ENV =================
 const BOT_TOKEN = process.env.BOT_TOKEN || "8281243098:AAFf4wdCowXR6ent0peu7ngL_GYW7dXPqY8"; 
 const CHAT_ID = process.env.CHAT_ID || "@TWS_Teams"; 
 const API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json";
@@ -11,29 +11,91 @@ const LOSS_STK = "CAACAgUAAxkBAAMKaVaqlwtXJIhkqunkRi-DkH0LP_cAAuAeAAJ1FQhVCo9WKm
 
 let lastPeriod = null;
 let history = [];
-let processing = false;
+let isProcessing = false;
 
-// --- UTILS ---
+// ================= UTILS =================
 const sleep = ms => new Promise(res => setTimeout(res, ms));
 
-async function callTG(type, body) {
+async function sendTG(type, body) {
   try {
     await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${type}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chat_id: CHAT_ID, ...body })
     });
-  } catch (e) { console.log("TG Error"); }
+  } catch (e) { console.log("Telegram error"); }
 }
 
-async function runLogic() {
-  if (processing) return;
-  processing = true;
+// ================= LOGIC =================
+async function runBot() {
+  if (isProcessing) return;
+  isProcessing = true;
+
   try {
-    const res = await fetch(`${API_URL}?ts=${Date.now()}`);
-    const text = await res.text();
-    let j;
-    try { j = JSON.parse(text); } catch(e) { processing = false; return; }
+    const response = await fetch(`${API_URL}?ts=${Date.now()}`, {
+      headers: { "user-agent": "Mozilla/5.0" }
+    });
+    
+    const text = await response.text();
+    let json;
+    try {
+      json = JSON.parse(text);
+    } catch (e) {
+      isProcessing = false;
+      return;
+    }
+
+    const list = json?.data?.list || [];
+    if (list.length === 0) {
+      isProcessing = false;
+      return;
+    }
+
+    const current = list[0];
+    const currentPeriod = current.issue || current.issueNumber;
+    const nextPeriod = (BigInt(currentPeriod) + 1n).toString();
+
+    if (lastPeriod !== nextPeriod) {
+      // Result check for previous prediction
+      if (history.length > 0 && history[0].actual === null) {
+        const num = parseInt(String(current.number || current.result).slice(-1));
+        const actualType = num >= 5 ? "BIGG" : "SMALL";
+        const isWin = history[0].predicted === actualType;
+        await sendTG("sendSticker", { sticker: isWin ? WIN_STK : LOSS_STK });
+      }
+
+      await sleep(10000); // 10s wait for Telegram sync
+
+      const prediction = Math.random() > 0.5 ? "BIGG" : "SMALL";
+      const time = new Date().toLocaleTimeString("en-US", { hour12: true, timeZone: 'Asia/Dhaka' });
+
+      const message = `🎰 <b>WINGO 1M MARKET</b>\n` +
+                      `📊 <b>PERIOD:</b> <code>${nextPeriod}</code>\n` +
+                      `⏰ <b>Time:</b> ${time}\n` +
+                      `🎯 <b>BUY:</b> ${prediction === "BIGG" ? "🔴 BIGG" : "🟢 SMALL"}\n\n` +
+                      `⚡️<b>THIS SIGNAL PROVIDED BY TWS TEAM</b>⚡️`;
+
+      await sendTG("sendMessage", { text: message, parse_mode: "HTML" });
+      
+      history.unshift({ period: nextPeriod, predicted: prediction, actual: null });
+      lastPeriod = nextPeriod;
+      if (history.length > 5) history.pop();
+    }
+  } catch (err) {
+    console.log("Error in loop");
+  } finally {
+    isProcessing = false;
+  }
+}
+
+// ================= START SERVER =================
+http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end('SAIF 1M BOT IS LIVE');
+}).listen(process.env.PORT || 3000);
+
+console.log("🚀 Bot Started! Tracking WinGo 1M...");
+setInterval(runBot, 20000);
 
     const data = j?.data?.list || [];
     if (!data.length) { processing = false; return; }
