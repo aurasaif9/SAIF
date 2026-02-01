@@ -1,16 +1,15 @@
 #!/usr/bin/env node
-// SAIF 1M – RENDER LIVE FIXED VERSION
+// TWS WINGO 1M BOT – RENDER LIVE VERSION
 
 import express from "express";
 import os from "os";
-import fetch from "node-fetch";
 
-// ================= SERVER (RENDER LIVE) =================
+// ================= HTTP SERVER (RENDER FIX) =================
 const app = express();
 const PORT = process.env.PORT || 10000;
 
 app.get("/", (req, res) => {
-  res.send("✅ TWS WINGO 1M BOT IS LIVE");
+  res.send("✅ TWS WINGO 1M BOT IS LIVE 🚀");
 });
 
 app.listen(PORT, () => {
@@ -21,12 +20,14 @@ app.listen(PORT, () => {
 const TELEGRAM_BOT_TOKEN = "8281243098:AAFf4wdCowXR6ent0peu7ngL_GYW7dXPqY8";
 const TELEGRAM_CHAT_ID = "@TWS_Teams";
 
-const WIN_STICKER = "CAACAgUAAxkBAAMJaVaqlqfj3ezjjCGTEsZrhwbxTyAAAqQaAAI4ZQlVFQAB7e-5iBcyOAQ";
-const LOSS_STICKER = "CAACAgUAAxkBAAMKaVaqlwtXJIhkqunkRi-DkH0LP_cAAuAeAAJ1FQhVCo9WKmwYFIw4BA";
+const WIN_STICKER =
+  "CAACAgUAAxkBAAMJaVaqlqfj3ezjjCGTEsZrhwbxTyAAAqQaAAI4ZQlVFQAB7e-5iBcyOAQ";
+const LOSS_STICKER =
+  "CAACAgUAAxkBAAMKaVaqlwtXJIhkqunkRi-DkH0LP_cAAuAeAAJ1FQhVCo9WKmwYFIw4BA";
 
-// ================= USER INFO =================
+// ================= FIXED USER INFO =================
 const USER_NAME = "TWS BOT";
-const USER_COUNTRY = "BANGLADESH 🇧🇩";
+const USER_COUNTRY = "BANGLADESH";
 
 // ================= CONFIG =================
 const API_URL =
@@ -38,9 +39,7 @@ let predictionHistory = [];
 let lastPredictedPeriod = null;
 let nextUpdateTime = Date.now() + REFRESH_TIME;
 
-// ================= UTILS =================
-const delay = (ms) => new Promise((r) => setTimeout(r, ms));
-
+// ================= IP =================
 function getIP() {
   const nets = os.networkInterfaces();
   for (const n of Object.values(nets)) {
@@ -50,39 +49,56 @@ function getIP() {
   }
   return "127.0.0.1";
 }
+const IP_ADDR = getIP();
+
+// ================= UTILS =================
+const delay = (ms) => new Promise((res) => setTimeout(res, ms));
 
 // ================= TELEGRAM =================
 async function sendToTelegram(message, isSticker = false) {
   const type = isSticker ? "sendSticker" : "sendMessage";
-  const key = isSticker ? "sticker" : "text";
+  const bodyKey = isSticker ? "sticker" : "text";
 
-  const res = await fetch(
-    `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${type}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: TELEGRAM_CHAT_ID,
-        [key]: message,
-        parse_mode: isSticker ? undefined : "HTML",
-      }),
+  try {
+    const res = await fetch(
+      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${type}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: TELEGRAM_CHAT_ID,
+          [bodyKey]: message,
+          parse_mode: isSticker ? undefined : "HTML",
+        }),
+      }
+    );
+
+    if (!isSticker) {
+      console.log("✅ PREDICTION SENT TO TELEGRAM");
     }
-  );
-
-  if (res.ok && !isSticker) {
-    console.log("📨 PREDICTION SENT TO TELEGRAM");
+  } catch (e) {
+    console.log("❌ TELEGRAM ERROR");
   }
 }
 
 // ================= LOGIC =================
 function getPatternPrediction() {
-  const arr = ["BIGG", "SMALL"];
-  return arr[Math.floor(Math.random() * arr.length)];
+  const patterns = [
+    "BIGG",
+    "SMALL",
+    "BIGG",
+    "BIGG",
+    "SMALL",
+    "SMALL",
+    "BIGG",
+    "SMALL",
+  ];
+  return patterns[Math.floor(Math.random() * patterns.length)];
 }
 
 async function fetchGameResult() {
   try {
-    const res = await fetch(`${API_URL}?t=${Date.now()}`);
+    const res = await fetch(`${API_URL}?ts=${Date.now()}`);
     const j = await res.json();
     return j?.data?.list || [];
   } catch {
@@ -90,11 +106,13 @@ async function fetchGameResult() {
   }
 }
 
+// ================= MAIN LOOP =================
 async function updatePanel() {
-  nextUpdateTime = Date.now() + REFRESH_TIME;
-
   const data = await fetchGameResult();
-  if (!data.length) return;
+  if (!data.length) {
+    console.log("⏳ WAITING FOR GAME DATA...");
+    return;
+  }
 
   const cur = data[0];
   const currentPeriod = cur.issue || cur.issueNumber;
@@ -102,24 +120,28 @@ async function updatePanel() {
 
   if (lastPredictedPeriod === nextPeriod) return;
 
-  console.log("⏳ WAITING 10 SECONDS BEFORE SIGNAL...");
-  await delay(10000);
-
-  // === CHECK LAST RESULT ===
+  // ===== RESULT CHECK =====
   if (predictionHistory.length > 0) {
-    const num = parseInt(String(cur.number || cur.result).slice(-1));
-    const actual = num >= 5 ? "BIGG" : "SMALL";
-    const last = predictionHistory[0];
-    last.actual = actual;
+    const actualNum = parseInt(String(cur.number || cur.result).slice(-1));
+    const actualRes = actualNum >= 5 ? "BIGG" : "SMALL";
 
-    if (last.predicted === actual) {
+    const last = predictionHistory[0];
+    last.actual = actualRes;
+
+    if (last.predicted === actualRes) {
       await sendToTelegram(WIN_STICKER, true);
+      console.log("🏆 RESULT : WIN");
     } else {
       await sendToTelegram(LOSS_STICKER, true);
+      console.log("❌ RESULT : LOSS");
     }
   }
 
-  // === SEND NEW PREDICTION ===
+  // ===== DELAY =====
+  console.log("⏳ WAITING 10s BEFORE NEXT SIGNAL...");
+  await delay(10000);
+
+  // ===== SEND NEW PREDICTION =====
   const p = getPatternPrediction();
   const timeNow = new Date().toLocaleTimeString("en-US", {
     hour: "2-digit",
@@ -144,19 +166,17 @@ async function updatePanel() {
   });
 
   lastPredictedPeriod = nextPeriod;
+  nextUpdateTime = Date.now() + REFRESH_TIME;
 
-  console.log("✅ NEW SIGNAL:", nextPeriod, p);
+  console.log("📤 SIGNAL:", nextPeriod, p);
 }
-
-// ================= COUNTDOWN =================
-setInterval(() => {
-  const s = Math.max(0, Math.floor((nextUpdateTime - Date.now()) / 1000));
-  process.stdout.write(`\r⏳ NEXT UPDATE IN : ${s}s   `);
-}, 1000);
 
 // ================= START =================
 console.log("🚀 TWS WINGO 1M BOT STARTED (RENDER LIVE)");
-console.log("👤", USER_NAME, "| 🌍", USER_COUNTRY, "| IP:", getIP());
+console.log("IP:", IP_ADDR, "| NAME:", USER_NAME, "| COUNTRY:", USER_COUNTRY);
 
-updatePanel();
 setInterval(updatePanel, REFRESH_TIME);
+setInterval(() => {
+  const s = Math.max(0, Math.floor((nextUpdateTime - Date.now()) / 1000));
+  process.stdout.write(`⏳ NEXT UPDATE IN : ${s}s\r`);
+}, 1000);
