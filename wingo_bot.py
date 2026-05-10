@@ -24,10 +24,10 @@ B_POOL      = [5, 6, 7, 8, 9]
 S_POOL      = [0, 1, 2, 3, 4]
 
 # ─── TIME SCHEDULE (pore set korba) ──────────────────────────────────────
-START_HOUR  = 4   # e.g. 9   → সকাল ৯:০০ AM
-START_MIN   = 14  # e.g. 0
-STOP_HOUR   = 5   # e.g. 23  → রাত ১১:০০ PM
-STOP_MIN    = 0   # e.g. 0
+START_HOUR  = None   # e.g. 9   → সকাল ৯:০০ AM
+START_MIN   = None # e.g. 0
+STOP_HOUR   = None  # e.g. 23  → রাত ১১:০০ PM
+STOP_MIN    = None  # e.g. 0
 # None = 24/7 চলবে
 
 def is_active_time():
