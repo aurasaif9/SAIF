@@ -25,7 +25,7 @@ S_POOL      = [0, 1, 2, 3, 4]
 
 # ─── TIME SCHEDULE (pore set korba) ──────────────────────────────────────
 START_HOUR  = 04   # e.g. 9   → সকাল ৯:০০ AM
-START_MIN   = 00  # e.g. 0
+START_MIN   = 06  # e.g. 0
 STOP_HOUR   = 05   # e.g. 23  → রাত ১১:০০ PM
 STOP_MIN    = 00   # e.g. 0
 # None = 24/7 চলবে
